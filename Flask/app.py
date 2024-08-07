@@ -64,9 +64,8 @@ def get_recommend(recIndexes, recommendedfield_df):
     if recIndexes == None:
         return []
     else:
-        recIndex_list = [int(recIndex) for recIndex in recIndexes.split(',')]
-        category = [recommendedfield_df[recommendedfield_df['recIndex'] == idx]['category1'].values[0] + ' > ' + 
-                    recommendedfield_df[recommendedfield_df['recIndex'] == idx]['category2'].values[0] for idx in recIndex_list]
+        recIndex_list = [int(recIndex) for recIndex in recIndexes.split(',') if recIndex]
+        category = [recommendedfield_df[recommendedfield_df['recIndex'] == idx]['category1'].values[0] + ' > ' + recommendedfield_df[recommendedfield_df['recIndex'] == idx]['category2'].values[0] for idx in recIndex_list]
         return category
     
 def get_recommendSearch(user_id, title_df, profile_df, recommendedfield_df):
