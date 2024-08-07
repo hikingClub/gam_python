@@ -189,104 +189,14 @@ def autocomplete():
     return jsonify(suggestions)
 
 #-------------------------------------------------------------금일 증분수정데이터-------------------------------------------------------
-url = "https://metalink.k-knowledge.kr/openapi/metadata/dist"
-api_key = "mj6kbugfygorn13o7v53sjostzf35s379t2ql96i8fdiiwpsotaj9m9mpqg1cq27"
-
-headers = {
-    "api_key": api_key  
-}
-
-params = {"from" : today,
-          "until" : today,
-          'page' : 1,
-          'size' : 1,
-          "type" : 'json'}
-
-response = requests.get(url, headers=headers, params=params)
-
-# 응답 처리
-if response.status_code == 200:
-    data = response.json()
-    totalCount = data['header']['totalCount']
-    print("데이터 조회 성공:", totalCount)
-else:
-    print("데이터 조회 실패:", response.status_code, response.text)
-
-new = []
-
-for  i in range(1, totalCount//10000+2):
-    params = {"from" : today,
-              "until" : today,
-              'page' : i,
-              'size' : 10000,
-              "type" : 'json'}
-    
-    response = requests.get(url, headers=headers, params=params)
-    # 응답 처리
-    if response.status_code == 200:
-        data = response.json()
-        for item in data['items']:
-            new.append(item)
-    else:
-        print("데이터 조회 실패:", response.status_code, response.text)
-
-def filtering_data(list):
-    typef = {'T001' : '논문', 'T002' : '보고서', 'T003' : '멀티미디어', 'T004' : '특허', 'T005' : '도서', 'T006' : '신문/잡지', 'T007' : '법령', 'T008' : '용어정보', 'T009' : '인물정보', 'T010' : '고전', 'T011' : '기록물'}
-
-    statusList = []
-    typeList = []
-    classification = []
-    titleList = []
-    subjectList = []
-    descriptionList = []
-    summaryList = []
-    publisherList = []
-    contributorList = []
-    dateList = []
-    identifierList = []
-
-    for item in list:
-        sublist = []
-        if 'modified' in item['date'].keys():
-            statusList.append('수정')
-        elif 'D' == item['status']:
-            statusList.append('삭제')
-        else:
-            statusList.append('신규')
-        typeList.append(item['type'])
-        classification.append(item['classifications'])
-        titleList.append(item['title']['org'])
-        for i in item['subjects']:
-            if len(i['org']) != 0:
-                sublist.append(i['org'])
-            if len(i['alt']) != 0:
-                sublist.append(i['alt'])
-        subjectList.append(sublist)
-        descriptionList.append(item['description']['abstract']['org'])
-        summaryList.append(item['description']['summary']['org'])
-        publisherList.append(item['publisher']['org'])
-        contributorList.append(item['contributors'][0]['org'])
-        dateList.append(item['date']['created'])
-        identifierList.append(item['identifier']['url'])
-    df = pd.DataFrame({'status': statusList,
-                       'type': typeList,
-                       'classification': classification,
-                       'title': titleList,
-                       'subject': subjectList,
-                       'description': descriptionList,
-                       'summary': summaryList,
-                       'publisher': publisherList,
-                       'contributors': contributorList,
-                       'date': dateList,
-                       'identifier': identifierList})
-    df['type'] = df['type'].map(typef)
-    return df
-
-new_df = filtering_data(new)
+# 데이터베이스 연결
+with engine.connect() as connection:
+    # SQL 쿼리 실행 및 데이터프레임으로 변환
+    meta_df = pd.read_sql("SELECT * FROM METADATA", connection)
 
 @app.route('/get_data', methods=['POST'])
 def get_data():
-    return jsonify(new_df.to_dict(orient='records'))
+    return jsonify(meta_df.to_dict(orient='records'))
 
 if __name__ == '__main__':
     app.run(debug=True)
