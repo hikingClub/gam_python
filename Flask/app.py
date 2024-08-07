@@ -4,7 +4,7 @@ import torch
 import pandas as pd
 import requests
 import datetime
-from datetime import datetime, timedelta
+from datetime import timedelta
 import json
 from flask_cors import CORS
 from sqlalchemy import create_engine
@@ -80,9 +80,8 @@ def get_recommendSearch(user_id, title_df, profile_df, recommendedfield_df):
 with engine.connect() as connection:
     user_agejob_df = pd.read_sql("SELECT * FROM embedding_table", connection)
 
-embedding_loaded_list = json.loads(user_agejob_df['embedding'][0])
-user_agejob_df['embedding'] = [torch.tensor(embedding_loaded_list)]
-user_agejob_df
+embedding_loaded_list = [json.loads(embedding) for embedding in user_agejob_df['embedding']]
+user_agejob_df['embedding'] = [torch.tensor(i) for i in embedding_loaded_list]
 
 tokenizer1 = AutoTokenizer.from_pretrained("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
 model1 = AutoModel.from_pretrained("snunlp/KR-SBERT-V40K-klueNLI-augSTS")
