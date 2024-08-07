@@ -1,14 +1,17 @@
-from flask import Flask, request, jsonify, render_template
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoModel
-import torch
+import datetime
+import json
 import pandas as pd
 import requests
 import datetime
 from datetime import timedelta
 import json
 from flask_cors import CORS
-from sqlalchemy import create_engine
 from sklearn.metrics.pairwise import cosine_similarity
+from sqlalchemy import create_engine
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+import torch
+from flask import Flask, jsonify, render_template, request
+
 today = datetime.datetime.now().strftime("%Y-%m-%d")
 startDate = (datetime.datetime.now()- 2*timedelta(365)).strftime("%Y-%m-%d")
 
@@ -178,7 +181,6 @@ def autocomplete_search(query, max_length=7, num_return_sequences=5):
 #@app.route('/')
 #def home():
 #    return render_template('index.html')
-
 
 @app.route('/autocomplete', methods=['POST'])
 def autocomplete():
