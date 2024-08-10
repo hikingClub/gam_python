@@ -8,7 +8,7 @@ import json
 from flask_cors import CORS
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy import create_engine
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BertTokenizer, BertModel
 import torch
 from flask import Flask, jsonify, render_template, request
 
@@ -99,7 +99,7 @@ def get_embeddings(text):
 def get_user_profile_embeddings(user_id, search_df, view_df, favorite_df, profile_df):
     search_df['embedding'] = search_df['keyword'].apply(get_embeddings)
     view_df['embedding'] = view_df['viewTitle'].apply(get_embeddings)
-    favorite_df['embedding'] = favorite_df['favoriteTitle'].apply(get_embeddings)
+    favorite_df['embedding'] = favorite_df['empathyTitle'].apply(get_embeddings)
 
     search_embeddings_list = search_df[search_df['seq'] == user_id]['embedding'].tolist()
     view_embeddings_list = view_df[view_df['seq'] == user_id]['embedding'].tolist()
@@ -152,31 +152,42 @@ def recommend_search():
         return jsonify({"status": "error", "message": str(e)})
 
 # -------------------------------------------검색어 자동완성----------------------------------------------
-# 모델과 토크나이저 로드
-model_name = "skt/kogpt2-base-v2"
-model2 = AutoModelForCausalLM.from_pretrained(model_name)
-tokenizer2 = AutoTokenizer.from_pretrained(model_name)
 
-def autocomplete_search(query, max_length=7, num_return_sequences=5):
-    # 입력 시퀀스를 토큰화
-    input_ids = tokenizer2.encode(query, return_tensors='pt')
-    
-    # 모델을 사용해 예측
+# KoBERT 모델과 토크나이저 로드
+kobert_tokenizer = BertTokenizer.from_pretrained('beomi/kcbert-base')
+kobert_model = BertModel.from_pretrained('beomi/kcbert-base')
+
+# KoGPT2 모델과 토크나이저 로드
+kogpt2_tokenizer = AutoTokenizer.from_pretrained('skt/kogpt2-base-v2')
+kogpt2_model = AutoModelForCausalLM.from_pretrained('skt/kogpt2-base-v2')
+
+def autocomplete_search(query, num_return_sequences=5):
+    # BERT 인코더로 문맥 정보 얻기
+    inputs = kobert_tokenizer(query, return_tensors='pt')
     with torch.no_grad():
-        outputs = model2.generate(
-            input_ids,
-            max_length=max_length,
+        encoder_outputs = kobert_model(**inputs)
+
+    # 문맥 정보를 GPT 디코더의 입력으로 사용
+    encoder_hidden_states = encoder_outputs.last_hidden_state
+    gpt_inputs = kogpt2_tokenizer(query, return_tensors='pt')
+    gpt_inputs = {k: v for k, v in gpt_inputs.items()}
+    gpt_inputs['encoder_hidden_states'] = encoder_hidden_states
+
+    # GPT 디코더로 텍스트 생성 (검색어 뒤에 단어 하나만 생성)
+    with torch.no_grad():
+        outputs = kogpt2_model.generate(
+            input_ids=gpt_inputs['input_ids'],
+            max_length=gpt_inputs['input_ids'].shape[1] + 1,  # 단어 하나만 생성
             num_return_sequences=num_return_sequences,
-            no_repeat_ngram_size=2,
-            early_stopping=True,
-            top_p=0.95,
+            pad_token_id=kogpt2_tokenizer.eos_token_id,
+            do_sample=True,
             top_k=50,
-            do_sample=True
+            top_p=0.95,
+            eos_token_id=kogpt2_tokenizer.eos_token_id
         )
-    
-    # 예측된 토큰을 텍스트로 변환
-    suggestions = [tokenizer2.decode(output, skip_special_tokens=True).strip() for output in outputs]
-    return suggestions
+
+    generated_texts = [kogpt2_tokenizer.decode(output, skip_special_tokens=True) for output in outputs]
+    return generated_texts
 
 #@app.route('/')
 #def home():
