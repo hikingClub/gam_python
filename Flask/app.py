@@ -8,7 +8,7 @@ import json
 from flask_cors import CORS
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy import create_engine
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BertTokenizer, BertModel
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BertTokenizer, BertModel, pipeline, M2M100ForConditionalGeneration, M2M100Tokenizer
 import torch
 from flask import Flask, jsonify, render_template, request
 
@@ -209,6 +209,69 @@ with engine.connect() as connection:
 @app.route('/get_data', methods=['POST'])
 def get_data():
     return jsonify(meta_df.to_dict(orient='records'))
+#-------------------------------------------------------------이미지 검색-----------------------------------------------------------------
+# 이미지 캡셔닝 모델 불러오기
+captioner = pipeline("image-to-text", model="Salesforce/blip-image-captioning-base")
+
+#번역 모델 사용 (google/mt5-small)
+tr_model_name = 'facebook/m2m100_418M'
+tr_tokenizer = M2M100Tokenizer.from_pretrained(tr_model_name)
+tr_model = M2M100ForConditionalGeneration.from_pretrained(tr_model_name)
+
+def get_searchapi_Image(keyword):
+    params = {
+        "searchKeyword": keyword,
+        "startDate": startDate,
+        "endDate": today,
+        "pageNum": "1",
+        "pagePer": "1000"
+    }
+    response = requests.post(url, headers=headers, data=json.dumps(params))
+
+    # 응답 처리
+    if response.status_code == 200:
+        data = response.json()
+        pretty_json = json.dumps(data, indent=4, ensure_ascii=False) # pretty print
+        return pd.DataFrame(data['result'])
+    else:
+        print("데이터 조회 실패:", response.status_code, response.text)
+
+def get_ImageText(image_path):
+    result = captioner(image_path)
+    english_caption = result[0]['generated_text']
+
+    # 번역 수행
+    input_text = english_caption
+    tr_tokenizer.src_lang = 'en'
+    encoded_en = tr_tokenizer(input_text, return_tensors="pt")
+    generated_tokens = tr_model.generate(**encoded_en, forced_bos_token_id=tr_tokenizer.get_lang_id("ko"))
+    korean_caption = tr_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
+    return korean_caption[0]
+
+def get_ImageSearch():
+    keyword = get_ImageText()
+    df = get_searchapi(keyword)
+    return df.to_dict(orient='records')
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return "No file part"
+    file = request.files['file']
+    if file.filename == '':
+        return "No selected file"
+    if file and allowed_file(file.filename):
+        # 파일을 저장할 필요 없이 바로 처리
+        image_path = file.read()  # 이미지 파일 내용 읽기
+        image_text = get_ImageText(image_path)
+        image_df = get_searchapi_Image(image_text)
+        result = image_df.to_dict(orient='records')
+
+        return jsonify({"status": "success", "result": result})
 
 if __name__ == '__main__':
     app.run(debug=True)
