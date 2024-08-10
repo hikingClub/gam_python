@@ -55,7 +55,7 @@ def load_data():
         # SQL 쿼리 실행 및 데이터프레임으로 변환
         search_df = pd.read_sql("SELECT * FROM SEARCHHISTORY", connection)
         view_df = pd.read_sql("SELECT * FROM VIEWHISTORY", connection)
-        favorite_df = pd.read_sql("SELECT * FROM FAVORITE", connection)
+        favorite_df = pd.read_sql("SELECT * FROM EMPATHY", connection)
         profile_df = pd.read_sql("SELECT * FROM MEMBER", connection)
         recommendedfield_df = pd.read_sql("SELECT * FROM RECOMMENDEDFIELD", connection)
     return search_df, view_df, favorite_df, profile_df, recommendedfield_df
@@ -101,18 +101,19 @@ def get_user_profile_embeddings(user_id, search_df, view_df, favorite_df, profil
     view_df['embedding'] = view_df['viewTitle'].apply(get_embeddings)
     favorite_df['embedding'] = favorite_df['favoriteTitle'].apply(get_embeddings)
 
-    search_embeddings = search_df[search_df['seq'] == user_id]['embedding'].tolist()
-    view_embeddings = view_df[view_df['seq'] == user_id]['embedding'].tolist()
-    favorite_embeddings = favorite_df[favorite_df['seq'] == user_id]['embedding'].tolist()
+    search_embeddings_list = search_df[search_df['seq'] == user_id]['embedding'].tolist()
+    view_embeddings_list = view_df[view_df['seq'] == user_id]['embedding'].tolist()
+    favorite_embeddings_list = favorite_df[favorite_df['seq'] == user_id]['embedding'].tolist()
     age = profile_df[profile_df['seq']== user_id]['ageRange'].values[0]
     job = profile_df[profile_df['seq'] == user_id]['jobRange'].values[0]
-    user_agejob_embeddings = user_agejob_df[(user_agejob_df['ageRange'] == age) & (user_agejob_df['jobRange'] == job)]['embedding'].tolist()
+    user_agejob_embeddings_list = user_agejob_df[(user_agejob_df['ageRange'] == age) & (user_agejob_df['jobRange'] == job)]['embedding'].tolist()
+
+    search_embeddings = torch.stack(search_embeddings_list) if search_embeddings_list else torch.zeros(1, model1.config.hidden_size)
+    view_embeddings = torch.stack(view_embeddings_list) if view_embeddings_list else torch.zeros(1, model1.config.hidden_size)
+    favorite_embeddings = torch.stack(favorite_embeddings_list) if favorite_embeddings_list else torch.zeros(1, model1.config.hidden_size)
+    user_agejob_embeddings = torch.stack(user_agejob_embeddings_list) if user_agejob_embeddings_list else torch.zeros(1, model1.config.hidden_size)
     
-    all_embeddings = search_embeddings + view_embeddings + favorite_embeddings + user_agejob_embeddings
-    if all_embeddings:
-        user_profile_embedding = torch.stack(all_embeddings).mean(dim=0)
-    else:
-        user_profile_embedding = torch.zeros(model1.config.hidden_size)  # 빈 프로파일 처리
+    user_profile_embedding  = search_embeddings.mean(dim=0) * 0.2 + view_embeddings.mean(dim=0) * 0.2 + favorite_embeddings.mean(dim=0) * 0.4 + user_agejob_embeddings.mean(dim=0) * 0.2
     
     return user_profile_embedding
 
