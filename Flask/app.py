@@ -1,15 +1,20 @@
 import datetime
 import json
+from datetime import timedelta
+from io import BytesIO
+
 import pandas as pd
 import requests
-import datetime
-from datetime import timedelta
-import json
+import torch
 from flask_cors import CORS
+from PIL import Image
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy import create_engine
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, BertTokenizer, BertModel, pipeline, M2M100ForConditionalGeneration, M2M100Tokenizer
-import torch
+from transformers import (AutoModel, AutoModelForCausalLM, AutoTokenizer,
+                          BertModel, BertTokenizer,
+                          M2M100ForConditionalGeneration, M2M100Tokenizer,
+                          pipeline)
+
 from flask import Flask, jsonify, render_template, request
 
 today = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -228,50 +233,44 @@ def get_searchapi_Image(keyword):
     }
     response = requests.post(url, headers=headers, data=json.dumps(params))
 
-    # 응답 처리
     if response.status_code == 200:
         data = response.json()
-        pretty_json = json.dumps(data, indent=4, ensure_ascii=False) # pretty print
         return pd.DataFrame(data['result'])
     else:
         print("데이터 조회 실패:", response.status_code, response.text)
+        return pd.DataFrame()  # 빈 데이터프레임 반환
 
-def get_ImageText(image_path):
-    result = captioner(image_path)
+def get_ImageText(image_data):
+    image = Image.open(BytesIO(image_data))
+    result = captioner(image)
     english_caption = result[0]['generated_text']
 
-    # 번역 수행
-    input_text = english_caption
     tr_tokenizer.src_lang = 'en'
-    encoded_en = tr_tokenizer(input_text, return_tensors="pt")
+    encoded_en = tr_tokenizer(english_caption, return_tensors="pt")
     generated_tokens = tr_model.generate(**encoded_en, forced_bos_token_id=tr_tokenizer.get_lang_id("ko"))
     korean_caption = tr_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)
     return korean_caption[0]
 
-def get_ImageSearch():
-    keyword = get_ImageText()
-    df = get_searchapi(keyword)
-    return df.to_dict(orient='records')
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"})
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"})
+    if file and allowed_file(file.filename):
+        image_data = file.read()  # 이미지 파일 내용 읽기
+        try:
+            image_text = get_ImageText(image_data)
+            image_df = get_searchapi_Image(image_text)
+            result = image_df.to_dict(orient='records')
+            return jsonify({"status": "success", "result": result})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)})
 
 def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'gif'}
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return "No file part"
-    file = request.files['file']
-    if file.filename == '':
-        return "No selected file"
-    if file and allowed_file(file.filename):
-        # 파일을 저장할 필요 없이 바로 처리
-        image_path = file.read()  # 이미지 파일 내용 읽기
-        image_text = get_ImageText(image_path)
-        image_df = get_searchapi_Image(image_text)
-        result = image_df.to_dict(orient='records')
-
-        return jsonify({"status": "success", "result": result})
 
 if __name__ == '__main__':
     app.run(debug=True)
